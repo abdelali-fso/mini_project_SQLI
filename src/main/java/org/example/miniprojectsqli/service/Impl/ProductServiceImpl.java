@@ -4,8 +4,8 @@ package org.example.miniprojectsqli.service.Impl;
 import org.example.miniprojectsqli.builder.BuildCreator;
 import org.example.miniprojectsqli.builder.BuilderCreatorImpl;
 import org.example.miniprojectsqli.dto.ProductDto;
-import org.example.miniprojectsqli.filtre.FilterPrice;
-import org.example.miniprojectsqli.filtre.checkPositive;
+import org.example.miniprojectsqli.filtre.Filter;
+import org.example.miniprojectsqli.filtre.checkFiltre;
 import org.example.miniprojectsqli.model.Product;
 import org.example.miniprojectsqli.repository.ProductRepository;
 import org.example.miniprojectsqli.service.ProductService;
@@ -24,7 +24,7 @@ public class ProductServiceImpl implements ProductService {
     //instance the logger for pass the message
     private static final Logger logger = LoggerFactory.getLogger(ProductServiceImpl.class);
     //Instance for filtre the price
-    private FilterPrice filterPrice = new checkPositive();
+    private Filter filter = new checkFiltre();
     //Instance for builder
     private BuildCreator buildCreator = new BuilderCreatorImpl();
     //Inject the repository
@@ -45,23 +45,20 @@ public class ProductServiceImpl implements ProductService {
      */
     @Override
     public Optional<ProductDto> addProduct(ProductDto newProduct) {
-        if (!filterPrice.isPositiveAndSupAZero(newProduct.getPrice())) {
-            logger.error("The price must be greater than strictly zero. Price: " + newProduct.getPrice());
-            return Optional.empty();
-        }
+        try {
+            filter.isPositiveAndSupAZero(newProduct.getPrice());
 
-        Long newProductCode = newProduct.getCode();
-        Optional<Product> optionalProduct = productRepository.findByCode(newProductCode);
-        if (optionalProduct.isPresent()) {
-            logger.error("This product code already exists");
-            return Optional.empty();
-        }
+            Optional<Product> optionalProduct = productRepository.findByCode(newProduct.getCode());
 
-        Product savedProduct = productRepository.save(
-                buildCreator.saveProduct(newProduct)
-        );
-        logger.info("Product saved successfully");
-        return Optional.of(buildCreator.mapToProductDto(savedProduct));
+            filter.isPresent(optionalProduct);
+
+            Product savedProduct = productRepository.save(buildCreator.saveProduct(newProduct));
+            logger.info("Product saved successfully");
+            return Optional.of(buildCreator.mapToProductDto(savedProduct));
+        } catch (Exception e) {
+            logger.error("Error in adding product: " + e.getMessage());
+            throw new RuntimeException("Failed to add product", e); // Throw an exception
+        }
     }
 
 
@@ -73,14 +70,19 @@ public class ProductServiceImpl implements ProductService {
      */
     @Override
     public boolean deleteProduct(Long code) {
-        Optional<Product> optionalProduct = productRepository.findByCode(code);
-        if (optionalProduct.isPresent()) {
-            productRepository.deleteById(optionalProduct.get().getProductId());
-            logger.info("Product with code " + code + " deleted successfully");
-            return true;
-        } else {
-            logger.error("The product with code " + code + " does not exist");
-            return false;
+        try {
+            Optional<Product> optionalProduct = productRepository.findByCode(code);
+            if (optionalProduct.isPresent()) {
+                productRepository.deleteById(optionalProduct.get().getProductId());
+                logger.info("Product with code " + code + " deleted successfully");
+                return true;
+            } else {
+                logger.error("The product with code " + code + " does not exist");
+                throw new IllegalArgumentException("Product with code " + code + " does not exist");
+            }
+        } catch (Exception e) {
+            logger.error("Error in deleting product: " + e.getMessage());
+            throw new RuntimeException("Failed to delete product", e); // Throw an exception
         }
     }
 
@@ -93,24 +95,23 @@ public class ProductServiceImpl implements ProductService {
      * update the product or show the error
      */
     @Override
-    public Optional<ProductDto> updateProduct(ProductDto productDto,Long code) {
-        if (!filterPrice.isPositiveAndSupAZero(productDto.getPrice())) {
-            logger.error("The price must be greater than strictly zero. Price: " + productDto.getPrice());
-            return Optional.empty();
+    public Optional<ProductDto> updateProduct(ProductDto productDto, Long code) {
+        try {
+            filter.isPositiveAndSupAZero(productDto.getPrice());
+
+            Optional<Product> optionalProduct = productRepository.findByCode(code);
+
+            filter.isPresent(optionalProduct);
+
+            Product updatedProduct = buildCreator.saveProduct(productDto);
+
+            Product savedProduct = productRepository.save(updatedProduct);
+
+            return Optional.of(buildCreator.mapToProductDto(savedProduct));
+        } catch (Exception e) {
+            logger.error("Error in updating product: " + e.getMessage());
+            throw new RuntimeException("Failed to update product", e); // Throw an exception
         }
-
-        Optional<Product> optionalProduct = productRepository.findByCode(code);
-
-        if (!optionalProduct.isPresent()) {
-            logger.error("This product does not exist");
-            return Optional.empty();
-        }
-
-        Product updatedProduct = buildCreator.saveProduct(productDto);
-
-        Product savedProduct = productRepository.save(updatedProduct);
-
-        return Optional.of(buildCreator.mapToProductDto(savedProduct));
     }
 
     /**
@@ -120,16 +121,16 @@ public class ProductServiceImpl implements ProductService {
      */
     @Override
     public Optional<List<ProductDto>> getAllProducts() {
-        try{
+        try {
             List<Product> products = productRepository.findAll();
             List<ProductDto> productDtos = products.stream()
                     .map(product -> buildCreator.mapToProductDto(product))
                     .collect(Collectors.toList());
 
             return Optional.of(productDtos);
-        }catch (Exception e){
+        } catch (Exception e) {
             logger.error("Error in getting all products: " + e.getMessage());
-            return Optional.empty();
+            throw new RuntimeException("Failed to retrieve all products", e); // Throw an exception
         }
     }
 
